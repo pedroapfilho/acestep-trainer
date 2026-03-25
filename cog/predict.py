@@ -116,6 +116,7 @@ class Predictor(BasePredictor):
             use_random_seed=seed < 0,
             seed=seed if seed >= 0 else -1,
             inference_steps=inference_steps,
+            batch_size=1,
         )
 
         audios = result.get("audios", [])
@@ -125,6 +126,11 @@ class Predictor(BasePredictor):
         audio_data = audios[0]
         tensor = audio_data["tensor"]
         sr = audio_data["sample_rate"]
+
+        # Trim to requested duration (model may generate longer)
+        max_samples = int(duration * sr)
+        if tensor.shape[-1] > max_samples:
+            tensor = tensor[..., :max_samples]
 
         out_path = Path(tempfile.mktemp(suffix=".wav"))
         torchaudio.save(str(out_path), tensor, sr)
