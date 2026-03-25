@@ -64,12 +64,23 @@ def main() -> None:
     dit_handler = init_dit_handler()
 
     # Download and load LoRA
+    # lora_repo can be "user/repo" or "user/repo/subfolder"
     logger.info(f"Loading LoRA from {lora_repo}...")
     import tempfile
 
     from huggingface_hub import snapshot_download
 
-    lora_local = snapshot_download(lora_repo, local_dir=tempfile.mkdtemp(prefix="lora_"))
+    parts = lora_repo.split("/")
+    if len(parts) > 2:
+        repo_id = "/".join(parts[:2])
+        subfolder = "/".join(parts[2:])
+        lora_local = snapshot_download(
+            repo_id, local_dir=tempfile.mkdtemp(prefix="lora_"), allow_patterns=f"{subfolder}/*"
+        )
+        lora_local = os.path.join(lora_local, subfolder)
+    else:
+        lora_local = snapshot_download(lora_repo, local_dir=tempfile.mkdtemp(prefix="lora_"))
+
     status = dit_handler.load_lora(lora_local)
     logger.info(f"LoRA: {status}")
 
