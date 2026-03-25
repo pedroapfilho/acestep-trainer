@@ -63,6 +63,8 @@ DEFAULT_TIMEOUTS = {
 def build_setup_commands() -> str:
     """Commands to set up the environment inside the HF Job."""
     return " && ".join([
+        # Install hf CLI (needed for bucket read/write)
+        "pip install -q huggingface_hub[hf_xet,cli]",
         # Clone repos
         f"git clone {ACESTEP_REPO} /workspace/ace-step-1.5",
         f"git clone {TRAINER_REPO} /workspace/acestep-trainer",
