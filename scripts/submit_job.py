@@ -65,17 +65,19 @@ def build_setup_commands() -> str:
     return " && ".join([
         # Install system deps (git not present in pytorch docker image)
         "apt-get update -qq && apt-get install -y -qq git > /dev/null",
-        # Install uv (fast Python package manager) and hf CLI
-        "pip install -q uv 'huggingface_hub[hf_xet]'",
+        # Install uv (fast Python package manager)
+        "pip install -q uv",
         # Clone repos
         f"git clone {ACESTEP_REPO} /workspace/ace-step-1.5",
         f"git clone {TRAINER_REPO} /workspace/acestep-trainer",
         # Install ace-step with uv (handles local nano-vllm source)
         "cd /workspace/ace-step-1.5",
         "uv pip install --system -e .",
-        # Install trainer deps
+        # Install trainer deps (re-upgrades huggingface_hub to >=1.5.0 for bucket support)
         "cd /workspace/acestep-trainer",
         "uv pip install --system -e .",
+        # Ensure hf CLI with xet backend is present (ace-step may downgrade huggingface_hub)
+        "uv pip install --system 'huggingface_hub[hf_xet]>=1.5.0'",
     ])
 
 
