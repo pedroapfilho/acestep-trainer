@@ -83,9 +83,11 @@ def scan(
 @app.command()
 def merge(
     bucket: str = typer.Argument(help="HF bucket name (user/repo)"),
-    num_shards: int = typer.Option(..., "--num-shards", help="Number of shards to merge"),
 ):
-    """Merge label shards into dataset.json after parallel labeling."""
+    """Merge label shards into dataset.json after parallel labeling.
+
+    Auto-detects all labels_shard_*.json files in the bucket.
+    """
     from acestep_trainer.bucket import file_exists
     from acestep_trainer.bucket import read_json
     from acestep_trainer.state import SampleState
@@ -93,22 +95,22 @@ def merge(
     from acestep_trainer.state import save_state
 
     state = load_state(bucket)
+    existing_files = {s.file: s for s in state.samples}
     total_merged = 0
+    shard_id = 0
 
-    for shard_id in range(num_shards):
+    while True:
         shard_path = f"labels_shard_{shard_id}.json"
         if not file_exists(bucket, shard_path):
-            typer.echo(f"  Shard {shard_id}: not found (skipping)")
-            continue
+            break
 
         shard_data = read_json(bucket, shard_path)
         shard_samples = [SampleState.from_dict(s) for s in shard_data.get("samples", [])]
-        labeled_in_shard = [s for s in shard_samples if s.status == "labeled"]
 
-        # Apply labels to main state
-        existing_files = {s.file: s for s in state.samples}
         applied = 0
-        for labeled_sample in labeled_in_shard:
+        for labeled_sample in shard_samples:
+            if labeled_sample.status != "labeled":
+                continue
             target = existing_files.get(labeled_sample.file)
             if target and target.status == "unlabeled":
                 target.status = labeled_sample.status
@@ -125,14 +127,18 @@ def merge(
 
         typer.echo(f"  Shard {shard_id}: {applied} labels applied")
         total_merged += applied
+        shard_id += 1
+
+    if shard_id == 0:
+        typer.echo("No shard files found in bucket")
+        return
 
     if total_merged > 0:
         save_state(bucket, state)
-        typer.echo(f"Merged {total_merged} labels into dataset.json")
+        typer.echo(f"Merged {total_merged} labels from {shard_id} shards")
     else:
-        typer.echo("No new labels to merge")
+        typer.echo(f"Found {shard_id} shards but no new labels to merge")
 
-    # Show updated status
     _print_status(bucket)
 
 
