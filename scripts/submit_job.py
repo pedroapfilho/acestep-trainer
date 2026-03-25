@@ -76,8 +76,8 @@ def build_setup_commands() -> str:
             # Install trainer deps
             "cd /workspace/acestep-trainer",
             "uv pip install --system -e .",
-            # Fix torchcodec: install latest CUDA nvrtc (provides libnvrtc.so.13)
-            "pip install nvidia-cuda-nvrtc",
+            # Fix torchcodec: reinstall version matching CUDA 12.8 runtime
+            "pip install --force-reinstall 'torchcodec==0.9.1'",
         ]
     )
 
