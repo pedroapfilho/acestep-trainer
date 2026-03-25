@@ -80,13 +80,15 @@ def build_setup_commands() -> str:
     )
 
 
-def build_label_command(args: argparse.Namespace) -> str:
+def build_label_command(args: argparse.Namespace, shard_id: int = -1, num_shards: int = 1) -> str:
     """Build the labeling command."""
     cmd = f"python /workspace/acestep-trainer/scripts/label.py --bucket {args.bucket}"
     if args.max_samples:
         cmd += f" --max-samples {args.max_samples}"
     if args.batch_size:
         cmd += f" --batch-size {args.batch_size}"
+    if shard_id >= 0:
+        cmd += f" --shard-id {shard_id} --num-shards {num_shards}"
     return cmd
 
 
@@ -169,6 +171,9 @@ def main():
     label_parser = subparsers.add_parser("label", parents=[common])
     label_parser.add_argument("--max-samples", type=int, default=0)
     label_parser.add_argument("--batch-size", type=int, default=50)
+    label_parser.add_argument(
+        "--parallel", type=int, default=1, help="Number of parallel jobs (shards)"
+    )
 
     # Preprocess
     pre_parser = subparsers.add_parser("preprocess", parents=[common])
@@ -192,6 +197,16 @@ def main():
     timeout = args.timeout or DEFAULT_TIMEOUTS[args.phase]
 
     if args.phase == "label":
+        parallel = getattr(args, "parallel", 1)
+        if parallel > 1:
+            print(f"Submitting {parallel} parallel labeling jobs...")
+            merge_cmd = f"uv run acestep-train merge {args.bucket} --num-shards {parallel}"
+            print(f"After all jobs complete, run: {merge_cmd}\n")
+            for shard_id in range(parallel):
+                command = build_label_command(args, shard_id=shard_id, num_shards=parallel)
+                phase_name = f"label (shard {shard_id}/{parallel})"
+                submit(phase_name, command, flavor, timeout, args.dry_run)
+            return
         command = build_label_command(args)
     elif args.phase == "preprocess":
         command = build_preprocess_command(args)
