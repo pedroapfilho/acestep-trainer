@@ -27,10 +27,6 @@ Usage:
 
 import argparse
 import os
-import sys
-
-from huggingface_hub import HfApi
-
 
 TRAINER_REPO = "https://github.com/pedroapfilho/acestep-trainer.git"
 ACESTEP_REPO = "https://github.com/ace-step/ACE-Step-1.5.git"
@@ -62,24 +58,26 @@ DEFAULT_TIMEOUTS = {
 
 def build_setup_commands() -> str:
     """Commands to set up the environment inside the HF Job."""
-    return " && ".join([
-        # Install system deps (git not present in pytorch docker image)
-        "apt-get update -qq && apt-get install -y -qq git > /dev/null",
-        # Install uv (fast Python package manager)
-        "pip install -q uv",
-        # Install standalone hf CLI (Rust binary — independent of Python huggingface_hub version)
-        "uv tool install 'huggingface_hub[hf_xet,cli]'",
-        "export PATH=$HOME/.local/bin:$PATH",
-        # Clone repos
-        f"git clone {ACESTEP_REPO} /workspace/ace-step-1.5",
-        f"git clone {TRAINER_REPO} /workspace/acestep-trainer",
-        # Install ace-step with uv (handles local nano-vllm source)
-        "cd /workspace/ace-step-1.5",
-        "uv pip install --system -e .",
-        # Install trainer deps
-        "cd /workspace/acestep-trainer",
-        "uv pip install --system -e .",
-    ])
+    return " && ".join(
+        [
+            # Install system deps (git not present in pytorch docker image)
+            "apt-get update -qq && apt-get install -y -qq git > /dev/null",
+            # Install uv (fast Python package manager)
+            "pip install -q uv",
+            # Install standalone hf CLI (Rust binary, avoids Python version conflicts)
+            "uv tool install 'huggingface_hub[hf_xet,cli]'",
+            "export PATH=$HOME/.local/bin:$PATH",
+            # Clone repos
+            f"git clone {ACESTEP_REPO} /workspace/ace-step-1.5",
+            f"git clone {TRAINER_REPO} /workspace/acestep-trainer",
+            # Install ace-step with uv (handles local nano-vllm source)
+            "cd /workspace/ace-step-1.5",
+            "uv pip install --system -e .",
+            # Install trainer deps
+            "cd /workspace/acestep-trainer",
+            "uv pip install --system -e .",
+        ]
+    )
 
 
 def build_label_command(args) -> str:
@@ -129,16 +127,16 @@ def submit(phase: str, command: str, flavor: str, timeout: str, dry_run: bool = 
     vram = flavor_info.get("vram", "?")
     cost = flavor_info.get("cost_hr", 0)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Phase: {phase}")
     print(f"Flavor: {flavor} ({vram} VRAM, ~${cost}/hr)")
     print(f"Timeout: {timeout}")
     print(f"Command: {command}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     if dry_run:
         print("[DRY RUN] Would submit the following job:")
-        print(f"  Image: pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel")
+        print("  Image: pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel")
         print(f"  Flavor: {flavor}")
         print(f"  Timeout: {timeout}")
         print(f"  Command: {full_command}")

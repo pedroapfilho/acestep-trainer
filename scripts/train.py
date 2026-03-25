@@ -20,7 +20,7 @@ import tempfile
 from huggingface_hub import HfApi
 from loguru import logger
 
-from acestep_trainer.handler import init_dit_handler, ensure_sys_path
+from acestep_trainer.handler import ensure_sys_path, init_dit_handler
 
 
 def sync_tensors(bucket: str, dest_dir: str) -> str:

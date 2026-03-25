@@ -4,7 +4,7 @@ The dataset.json file lives in the HF bucket and is the single source of truth.
 Each sample has a 'status' field: unlabeled -> labeled -> preprocessed.
 """
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 

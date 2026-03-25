@@ -18,7 +18,7 @@ import tempfile
 from loguru import logger
 
 from acestep_trainer.bucket import download_files, list_audio_files
-from acestep_trainer.handler import init_dit_handler, init_llm_handler, ensure_sys_path
+from acestep_trainer.handler import ensure_sys_path, init_dit_handler, init_llm_handler
 from acestep_trainer.state import (
     DatasetState,
     load_state,

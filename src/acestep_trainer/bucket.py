@@ -6,7 +6,6 @@ Python huggingface_hub version conflicts with transformers.
 
 import json
 import os
-import re
 import subprocess
 import tempfile
 from typing import Any

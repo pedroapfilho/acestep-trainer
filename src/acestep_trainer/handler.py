@@ -27,8 +27,7 @@ def get_project_root() -> str:
             return os.path.abspath(c)
 
     raise FileNotFoundError(
-        "ace-step-1.5 not found. Set ACESTEP_ROOT env var or ensure "
-        "the submodule is checked out."
+        "ace-step-1.5 not found. Set ACESTEP_ROOT env var or ensure the submodule is checked out."
     )
 
 
@@ -91,8 +90,9 @@ def init_llm_handler(
     checkpoint_dir = os.path.join(root, "checkpoints")
 
     # Download LM model if not present (DiT init only downloads the main model)
-    from acestep.model_downloader import ensure_lm_model
     from pathlib import Path
+
+    from acestep.model_downloader import ensure_lm_model
 
     ok, msg = ensure_lm_model(
         model_name=model_name,

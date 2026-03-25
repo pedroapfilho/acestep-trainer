@@ -17,7 +17,7 @@ import tempfile
 from loguru import logger
 
 from acestep_trainer.bucket import download_files, upload_directory
-from acestep_trainer.handler import init_dit_handler, ensure_sys_path
+from acestep_trainer.handler import ensure_sys_path, init_dit_handler
 from acestep_trainer.state import load_state, save_state
 
 
@@ -77,9 +77,7 @@ def preprocess_batch(
     for sample_state, output_path in zip(batch, output_paths):
         if output_path:
             tensor_name = os.path.basename(output_path)
-            sample_state_ref = next(
-                (s for s in state.samples if s.file == sample_state.file), None
-            )
+            sample_state_ref = next((s for s in state.samples if s.file == sample_state.file), None)
             if sample_state_ref:
                 state.mark_preprocessed(sample_state.file, f"tensors/{tensor_name}")
                 preprocessed_count += 1
@@ -131,7 +129,13 @@ def main():
             os.makedirs(tensor_dir, exist_ok=True)
 
             count = preprocess_batch(
-                dit_handler, state, args.bucket, batch, work_dir, tensor_dir, args.max_duration
+                dit_handler,
+                state,
+                args.bucket,
+                batch,
+                work_dir,
+                tensor_dir,
+                args.max_duration,
             )
             total_preprocessed += count
 
