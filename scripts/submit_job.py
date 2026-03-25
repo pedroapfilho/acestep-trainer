@@ -80,7 +80,7 @@ def build_setup_commands() -> str:
     )
 
 
-def build_label_command(args) -> str:
+def build_label_command(args: argparse.Namespace) -> str:
     """Build the labeling command."""
     cmd = f"python /workspace/acestep-trainer/scripts/label.py --bucket {args.bucket}"
     if args.max_samples:
@@ -90,7 +90,7 @@ def build_label_command(args) -> str:
     return cmd
 
 
-def build_preprocess_command(args) -> str:
+def build_preprocess_command(args: argparse.Namespace) -> str:
     """Build the preprocessing command."""
     cmd = f"python /workspace/acestep-trainer/scripts/preprocess.py --bucket {args.bucket}"
     if args.max_samples:
@@ -102,7 +102,7 @@ def build_preprocess_command(args) -> str:
     return cmd
 
 
-def build_train_command(args) -> str:
+def build_train_command(args: argparse.Namespace) -> str:
     """Build the training command."""
     cmd = (
         f"python /workspace/acestep-trainer/scripts/train.py"

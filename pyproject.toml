@@ -30,3 +30,7 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
+
+[tool.basedpyright]
+extraPaths = ["ace-step-1.5"]
+reportMissingImports = "warning"
