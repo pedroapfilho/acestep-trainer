@@ -1,58 +1,90 @@
 """Cog Predictor for ACE-Step 1.5 with LoRA support.
 
 Deploys to Replicate as a serverless music generation model.
+The base model (ACE-Step) is installed in the Docker image at build time.
+Model weights and LoRA are downloaded during setup().
 """
 
 import os
-import subprocess
 import sys
 import tempfile
+import types
+import importlib.machinery
 from pathlib import Path
 
-import torch
+# Patch torchcodec before any torchaudio imports (CUDA 13 dep mismatch)
+def _patch_torchcodec():
+    def _make_stub(name):
+        mod = types.ModuleType(name)
+        mod.__spec__ = importlib.machinery.ModuleSpec(name, None)
+        mod.__loader__ = None
+        mod.__path__ = []
+        mod.__package__ = name.rsplit(".", 1)[0] if "." in name else name
+        return mod
+
+    def _load_sf(uri, *_a, **_kw):
+        import numpy as np
+        import soundfile as sf
+        import torch
+        data, sr = sf.read(uri, dtype="float32", always_2d=True)
+        return torch.from_numpy(np.ascontiguousarray(data.T)), sr
+
+    def _save_sf(uri, src, sample_rate, *_a, **_kw):
+        import numpy as np
+        import soundfile as sf
+        import torch
+        if isinstance(src, torch.Tensor):
+            data = src.cpu().numpy().T
+        else:
+            data = np.array(src).T
+        sf.write(uri, data, sample_rate)
+
+    ta = _make_stub("torchaudio._torchcodec")
+    ta.load_with_torchcodec = _load_sf
+    ta.save_with_torchcodec = _save_sf
+    sys.modules["torchaudio._torchcodec"] = ta
+    for name in ["torchcodec", "torchcodec.decoders", "torchcodec._internally_replaced_utils"]:
+        sys.modules[name] = _make_stub(name)
+
+_patch_torchcodec()
+
 import torchaudio
 from cog import BasePredictor, Input, Path as CogPath
 
 
 class Predictor(BasePredictor):
     def setup(self):
-        """Download ACE-Step model and LoRA weights."""
+        """Download model weights and LoRA, initialize handler."""
         from huggingface_hub import snapshot_download
 
-        # Download base ACE-Step model
-        self.checkpoints_dir = "/src/checkpoints"
-        if not os.path.exists(os.path.join(self.checkpoints_dir, "acestep-v15-turbo")):
-            snapshot_download(
-                "ACE-Step/Ace-Step1.5",
-                local_dir=self.checkpoints_dir,
-            )
+        project_root = "/src/ace-step-1.5"
+        checkpoints_dir = os.path.join(project_root, "checkpoints")
 
-        # Download default LoRA
-        self.lora_dir = "/src/lora"
+        # Download base model weights
+        if not os.path.exists(os.path.join(checkpoints_dir, "acestep-v15-turbo")):
+            snapshot_download("ACE-Step/Ace-Step1.5", local_dir=checkpoints_dir)
+
+        # Download LoRA
         lora_repo = os.environ.get("LORA_REPO", "pedroapfilho/acestep-lofi-lora")
         lora_subfolder = os.environ.get("LORA_SUBFOLDER", "final/adapter")
+        self.lora_dir = "/src/lora"
         if not os.path.exists(os.path.join(self.lora_dir, "adapter_config.json")):
             snapshot_download(
                 lora_repo,
                 local_dir="/src/lora_full",
                 allow_patterns=f"{lora_subfolder}/*",
             )
-            # Move subfolder contents to lora_dir
             src = os.path.join("/src/lora_full", lora_subfolder)
             os.makedirs(self.lora_dir, exist_ok=True)
             for f in os.listdir(src):
                 os.rename(os.path.join(src, f), os.path.join(self.lora_dir, f))
 
-        # Sync model code files
-        self._sync_model_code()
-
-        # Load the model
-        sys.path.insert(0, "/src/ace-step-1.5")
+        # Initialize handler
         from acestep.handler import AceStepHandler
 
         self.handler = AceStepHandler()
         status, ok = self.handler.initialize_service(
-            project_root="/src/ace-step-1.5",
+            project_root=project_root,
             config_path="acestep-v15-turbo",
             device="cuda",
             use_flash_attention=True,
@@ -68,18 +100,6 @@ class Predictor(BasePredictor):
         # Load LoRA
         lora_status = self.handler.load_lora(self.lora_dir)
         print(f"LoRA loaded: {lora_status}")
-
-    def _sync_model_code(self):
-        """Clone ace-step repo for model code if not present."""
-        if not os.path.exists("/src/ace-step-1.5"):
-            subprocess.run(
-                ["git", "clone", "https://github.com/ace-step/ACE-Step-1.5.git", "/src/ace-step-1.5"],
-                check=True,
-            )
-        # Symlink checkpoints into the repo
-        repo_checkpoints = "/src/ace-step-1.5/checkpoints"
-        if not os.path.exists(repo_checkpoints):
-            os.symlink(self.checkpoints_dir, repo_checkpoints)
 
     def predict(
         self,
@@ -127,7 +147,7 @@ class Predictor(BasePredictor):
         tensor = audio_data["tensor"]
         sr = audio_data["sample_rate"]
 
-        # Trim to requested duration (model may generate longer)
+        # Trim to requested duration
         max_samples = int(duration * sr)
         if tensor.shape[-1] > max_samples:
             tensor = tensor[..., :max_samples]

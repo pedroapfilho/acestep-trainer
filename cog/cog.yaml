@@ -7,6 +7,9 @@ build:
     - "libsndfile1"
     - "git"
   python_requirements: requirements.txt
+  run:
+    - "git clone https://github.com/ace-step/ACE-Step-1.5.git /src/ace-step-1.5"
+    - "pip install -e /src/ace-step-1.5"
 
 predict: "predict.py:Predictor"
 image: "r8.im/frow/lofi"
