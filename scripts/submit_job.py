@@ -138,7 +138,7 @@ def submit(phase: str, command: str, flavor: str, timeout: str, dry_run: bool = 
 
     if dry_run:
         print("[DRY RUN] Would submit the following job:")
-        print("  Image: pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel")
+        print("  Image: pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel")
         print(f"  Flavor: {flavor}")
         print(f"  Timeout: {timeout}")
         print(f"  Command: {full_command}")
@@ -147,7 +147,7 @@ def submit(phase: str, command: str, flavor: str, timeout: str, dry_run: bool = 
     from huggingface_hub import run_job
 
     job = run_job(
-        image="pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel",
+        image="pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel",
         command=["bash", "-c", f"{setup} && {command}"],
         flavor=flavor,  # type: ignore[arg-type]  # HF SDK accepts string flavors
         timeout=timeout,
