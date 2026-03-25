@@ -63,8 +63,10 @@ DEFAULT_TIMEOUTS = {
 def build_setup_commands() -> str:
     """Commands to set up the environment inside the HF Job."""
     return " && ".join([
-        # Install hf CLI (needed for bucket read/write)
-        "pip install -q huggingface_hub[hf_xet,cli]",
+        # Install system deps (git not present in pytorch docker image)
+        "apt-get update -qq && apt-get install -y -qq git > /dev/null",
+        # Install hf CLI with xet support (needed for bucket read/write)
+        "pip install -q 'huggingface_hub[hf_xet]'",
         # Clone repos
         f"git clone {ACESTEP_REPO} /workspace/ace-step-1.5",
         f"git clone {TRAINER_REPO} /workspace/acestep-trainer",
