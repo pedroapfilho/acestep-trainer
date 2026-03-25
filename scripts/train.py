@@ -97,7 +97,11 @@ def main() -> None:
     logger.info("Syncing tensor files from bucket...")
     sync_tensors(bucket, tensor_dir)
 
-    output_dir = tempfile.mkdtemp(prefix="acestep_output_")
+    # output_dir must be inside the ace-step project root (safe_path restriction)
+    from acestep_trainer.handler import get_project_root
+
+    output_dir = os.path.join(get_project_root(), "training_output")
+    os.makedirs(output_dir, exist_ok=True)
 
     logger.info("Initializing ACE-Step DiT handler...")
     ensure_sys_path()
