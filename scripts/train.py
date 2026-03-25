@@ -15,6 +15,12 @@ Usage:
 
 from __future__ import annotations
 
+# Patch torchaudio before any imports that trigger it
+# (torchcodec has a CUDA 13 dep mismatch on HF Jobs)
+import patch_torchaudio
+
+patch_torchaudio.patch()
+
 import argparse
 import os
 import tempfile
