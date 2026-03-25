@@ -9,4 +9,4 @@ build:
   python_requirements: requirements.txt
 
 predict: "predict.py:Predictor"
-image: "r8.im/frow/acestep-lofi"
+image: "r8.im/frow/lofi"
