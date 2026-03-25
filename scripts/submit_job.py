@@ -61,7 +61,7 @@ def build_setup_commands() -> str:
     return " && ".join(
         [
             # Install system deps (git not present in pytorch docker image)
-            "apt-get update -qq && apt-get install -y -qq git > /dev/null",
+            "apt-get update -qq && apt-get install -y -qq git ffmpeg libsndfile1 > /dev/null",
             # Install uv (fast Python package manager)
             "pip install -q uv",
             # Install standalone hf CLI (Rust binary, avoids Python version conflicts)
