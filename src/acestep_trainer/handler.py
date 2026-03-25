@@ -85,11 +85,23 @@ def init_llm_handler(
     """Initialize the LLM handler for audio labeling/captioning.
 
     The LLM needs a checkpoint_dir (parent of model weights) and the
-    model name (subdirectory). On HF Jobs the models are downloaded
-    to {project_root}/checkpoints/ by the DiT init.
+    model name (subdirectory). Downloads the model from HF if not present.
     """
     root = ensure_sys_path()
     checkpoint_dir = os.path.join(root, "checkpoints")
+
+    # Download LM model if not present (DiT init only downloads the main model)
+    from acestep.model_downloader import ensure_lm_model
+    from pathlib import Path
+
+    ok, msg = ensure_lm_model(
+        model_name=model_name,
+        checkpoints_dir=Path(checkpoint_dir),
+        prefer_source="huggingface",
+    )
+    if not ok:
+        raise RuntimeError(f"Failed to download LLM model: {msg}")
+    logger.info(f"LLM model ready: {msg}")
 
     from acestep.llm_inference import LLMHandler
 
