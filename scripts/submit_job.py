@@ -76,8 +76,9 @@ def build_setup_commands() -> str:
             # Install trainer deps
             "cd /workspace/acestep-trainer",
             "uv pip install --system -e .",
-            # Remove torchcodec (broken CUDA 13 dep) — torchaudio+ffmpeg handles audio
-            "pip uninstall -y torchcodec 2>/dev/null || true",
+            # Fix torchcodec CUDA 13 dependency — symlink CUDA 12 nvrtc as 13
+            "ln -sf /opt/conda/lib/python3.11/site-packages/nvidia/cuda_nvrtc/lib/libnvrtc.so.12 /usr/lib/libnvrtc.so.13",
+            "ldconfig",
         ]
     )
 
