@@ -76,8 +76,6 @@ def build_setup_commands() -> str:
             # Install trainer deps
             "cd /workspace/acestep-trainer",
             "uv pip install --system -e .",
-            # Fix torchcodec: reinstall version matching CUDA 12.8 runtime
-            "pip install --force-reinstall 'torchcodec==0.9.1'",
         ]
     )
 
