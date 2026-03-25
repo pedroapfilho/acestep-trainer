@@ -9,9 +9,11 @@ Usage:
 
 import argparse
 import time
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
-from huggingface_hub import fetch_job_logs, list_jobs
+from huggingface_hub import fetch_job_logs
+from huggingface_hub import list_jobs
 
 STAGE_ICONS = {
     "RUNNING": "🟢",

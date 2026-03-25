@@ -149,7 +149,7 @@ def submit(phase: str, command: str, flavor: str, timeout: str, dry_run: bool = 
     job = run_job(
         image="pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel",
         command=["bash", "-c", f"{setup} && {command}"],
-        flavor=flavor,
+        flavor=flavor,  # type: ignore[arg-type]  # HF SDK accepts string flavors
         timeout=timeout,
         secrets={"HF_TOKEN": os.environ["HF_TOKEN"]},
     )

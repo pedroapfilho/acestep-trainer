@@ -62,7 +62,9 @@ def scan(
 ):
     """Scan bucket for audio files and sync to dataset.json."""
     from acestep_trainer.bucket import list_audio_files
-    from acestep_trainer.state import load_state, save_state, sync_files_to_state
+    from acestep_trainer.state import load_state
+    from acestep_trainer.state import save_state
+    from acestep_trainer.state import sync_files_to_state
 
     state = load_state(bucket)
 
@@ -84,8 +86,11 @@ def merge(
     num_shards: int = typer.Option(..., "--num-shards", help="Number of shards to merge"),
 ):
     """Merge label shards into dataset.json after parallel labeling."""
-    from acestep_trainer.bucket import file_exists, read_json
-    from acestep_trainer.state import SampleState, load_state, save_state
+    from acestep_trainer.bucket import file_exists
+    from acestep_trainer.bucket import read_json
+    from acestep_trainer.state import SampleState
+    from acestep_trainer.state import load_state
+    from acestep_trainer.state import save_state
 
     state = load_state(bucket)
     total_merged = 0

@@ -13,6 +13,8 @@ Usage:
         --max-epochs 100
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import tempfile
@@ -20,30 +22,17 @@ import tempfile
 from huggingface_hub import HfApi
 from loguru import logger
 
-from acestep_trainer.handler import ensure_sys_path, init_dit_handler
+from acestep_trainer.bucket import _hf_url
+from acestep_trainer.bucket import _run_hf
+from acestep_trainer.handler import ensure_sys_path
+from acestep_trainer.handler import init_dit_handler
 
 
 def sync_tensors(bucket: str, dest_dir: str) -> str:
-    """Download all tensor files from the bucket to local dir."""
-    from huggingface_hub import HfFileSystem
-
-    fs = HfFileSystem()
-    tensor_prefix = f"buckets/{bucket}/tensors"
-
-    if not fs.exists(tensor_prefix):
-        raise FileNotFoundError(f"No tensors/ directory found in bucket {bucket}")
-
-    # Download manifest and all .pt files
-    files = fs.ls(tensor_prefix, detail=False)
-    count = 0
-    for f in files:
-        name = os.path.basename(f)
-        local_path = os.path.join(dest_dir, name)
-        if not os.path.exists(local_path):
-            fs.get(f, local_path)
-            count += 1
-
-    logger.info(f"Synced {count} tensor files to {dest_dir}")
+    """Download all tensor files from the bucket to local dir via hf CLI."""
+    _run_hf("buckets", "sync", _hf_url(bucket, "tensors"), dest_dir)
+    count = sum(1 for f in os.listdir(dest_dir) if f.endswith((".pt", ".json")))
+    logger.info(f"Synced {count} files to {dest_dir}")
     return dest_dir
 
 
@@ -55,8 +44,6 @@ def push_checkpoint(
 ) -> None:
     """Push a checkpoint to a HuggingFace model repo."""
     api = HfApi()
-
-    # Create repo if it doesn't exist
     api.create_repo(repo_id, exist_ok=True, private=True)
 
     subfolder = "final" if is_final else f"checkpoints/epoch_{epoch}"
@@ -69,17 +56,13 @@ def push_checkpoint(
     logger.info(f"Pushed checkpoint to {repo_id}/{subfolder}")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Train LoRA from preprocessed tensors")
     parser.add_argument("--bucket", required=True, help="HF bucket with tensors/")
     parser.add_argument("--output-repo", required=True, help="HF model repo for checkpoints")
-
-    # LoRA config
     parser.add_argument("--lora-rank", type=int, default=8, help="LoRA rank")
     parser.add_argument("--lora-alpha", type=int, default=16, help="LoRA alpha")
     parser.add_argument("--lora-dropout", type=float, default=0.1, help="LoRA dropout")
-
-    # Training config
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--gradient-accumulation", type=int, default=4)
@@ -87,41 +70,46 @@ def main():
     parser.add_argument("--save-every", type=int, default=10, help="Save every N epochs")
     parser.add_argument("--warmup-steps", type=int, default=100)
     parser.add_argument("--resume-from", default=None, help="Checkpoint dir to resume from")
+    parsed = parser.parse_args()
 
-    args = parser.parse_args()
+    bucket: str = parsed.bucket
+    output_repo: str = parsed.output_repo
+    lora_rank: int = parsed.lora_rank
+    lora_alpha: int = parsed.lora_alpha
+    lora_dropout: float = parsed.lora_dropout
+    learning_rate: float = parsed.learning_rate
+    batch_size: int = parsed.batch_size
+    gradient_accumulation: int = parsed.gradient_accumulation
+    max_epochs: int = parsed.max_epochs
+    save_every: int = parsed.save_every
+    warmup_steps: int = parsed.warmup_steps
+    resume_from: str | None = parsed.resume_from
 
-    logger.info(f"Starting LoRA training from bucket: {args.bucket}")
+    logger.info(f"Starting LoRA training from bucket: {bucket}")
 
-    # Sync tensors from bucket to local temp dir
     tensor_dir = tempfile.mkdtemp(prefix="acestep_tensors_")
     logger.info("Syncing tensor files from bucket...")
-    sync_tensors(args.bucket, tensor_dir)
+    sync_tensors(bucket, tensor_dir)
 
-    # Output dir for checkpoints (local, pushed to HF after each save)
     output_dir = tempfile.mkdtemp(prefix="acestep_output_")
 
-    # Initialize model (downloads from HF on first use, no quantization for LoRA)
     logger.info("Initializing ACE-Step DiT handler...")
     ensure_sys_path()
     dit_handler = init_dit_handler(quantization=None)
 
-    # Configure training
-    from acestep.training.configs import LoRAConfig, TrainingConfig
-    from acestep.training.trainer import LoRATrainer
+    from acestep.training.configs import LoRAConfig  # type: ignore[import-untyped]
+    from acestep.training.configs import TrainingConfig  # type: ignore[import-untyped]
+    from acestep.training.trainer import LoRATrainer  # type: ignore[import-untyped]
 
-    lora_config = LoRAConfig(
-        r=args.lora_rank,
-        alpha=args.lora_alpha,
-        dropout=args.lora_dropout,
-    )
+    lora_config = LoRAConfig(r=lora_rank, alpha=lora_alpha, dropout=lora_dropout)
 
     training_config = TrainingConfig(
-        learning_rate=args.learning_rate,
-        batch_size=args.batch_size,
-        gradient_accumulation_steps=args.gradient_accumulation,
-        max_epochs=args.max_epochs,
-        save_every_n_epochs=args.save_every,
-        warmup_steps=args.warmup_steps,
+        learning_rate=learning_rate,
+        batch_size=batch_size,
+        gradient_accumulation_steps=gradient_accumulation,
+        max_epochs=max_epochs,
+        save_every_n_epochs=save_every,
+        warmup_steps=warmup_steps,
         output_dir=output_dir,
     )
 
@@ -131,47 +119,42 @@ def main():
         training_config=training_config,
     )
 
-    # Train
     logger.info(
-        f"Training: rank={args.lora_rank}, alpha={args.lora_alpha}, "
-        f"lr={args.learning_rate}, epochs={args.max_epochs}, "
-        f"batch={args.batch_size}, grad_accum={args.gradient_accumulation}"
+        f"Training: rank={lora_rank}, alpha={lora_alpha}, "
+        f"lr={learning_rate}, epochs={max_epochs}, "
+        f"batch={batch_size}, grad_accum={gradient_accumulation}"
     )
 
     last_pushed_epoch = -1
     for step, loss, status in trainer.train_from_preprocessed(
         tensor_dir=tensor_dir,
         training_state={"should_stop": False},
-        resume_from=args.resume_from,
+        resume_from=resume_from,
     ):
         logger.info(f"Step {step} | Loss: {loss:.6f} | {status}")
 
-        # Push checkpoint when a new epoch save occurs
         if "saved checkpoint" in status.lower():
-            # Extract epoch from the checkpoint directory
+            checkpoints_path = os.path.join(output_dir, "checkpoints")
             checkpoint_dirs = sorted(
-                [
-                    d
-                    for d in os.listdir(os.path.join(output_dir, "checkpoints"))
-                    if os.path.isdir(os.path.join(output_dir, "checkpoints", d))
-                ]
+                d
+                for d in os.listdir(checkpoints_path)
+                if os.path.isdir(os.path.join(checkpoints_path, d))
             )
             if checkpoint_dirs:
                 latest = checkpoint_dirs[-1]
                 epoch_num = int(latest.split("_")[-1]) if "_" in latest else 0
                 if epoch_num > last_pushed_epoch:
                     push_checkpoint(
-                        os.path.join(output_dir, "checkpoints", latest),
-                        args.output_repo,
+                        os.path.join(checkpoints_path, latest),
+                        output_repo,
                         epoch_num,
                     )
                     last_pushed_epoch = epoch_num
 
-    # Push final checkpoint
     final_dir = os.path.join(output_dir, "final")
     if os.path.exists(final_dir):
-        push_checkpoint(final_dir, args.output_repo, 0, is_final=True)
-        logger.info(f"Final model pushed to {args.output_repo}/final")
+        push_checkpoint(final_dir, output_repo, 0, is_final=True)
+        logger.info(f"Final model pushed to {output_repo}/final")
     else:
         logger.warning("No final/ directory found — check training output")
 

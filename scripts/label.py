@@ -20,34 +20,43 @@ Usage (parallel — 4 shards):
 After all shards complete, run: uv run acestep-train merge <bucket>
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import tempfile
+from typing import Any
 
 from loguru import logger
 
-from acestep_trainer.bucket import download_files, list_audio_files, write_json
-from acestep_trainer.handler import ensure_sys_path, init_dit_handler, init_llm_handler
-from acestep_trainer.state import (
-    DatasetState,
-    SampleState,
-    load_state,
-    save_state,
-    sync_files_to_state,
-)
+from acestep_trainer.bucket import download_files
+from acestep_trainer.bucket import list_audio_files
+from acestep_trainer.bucket import write_json
+from acestep_trainer.handler import ensure_sys_path
+from acestep_trainer.handler import init_dit_handler
+from acestep_trainer.handler import init_llm_handler
+from acestep_trainer.state import DatasetState
+from acestep_trainer.state import SampleState
+from acestep_trainer.state import load_state
+from acestep_trainer.state import save_state
+from acestep_trainer.state import sync_files_to_state
 
 
 def label_batch(
-    dit_handler,
-    llm_handler,
+    dit_handler: Any,
+    llm_handler: Any,
     state: DatasetState,
     bucket: str,
     batch: list[SampleState],
     work_dir: str,
 ) -> int:
     """Download and label a batch of samples. Returns count of newly labeled."""
-    from acestep.training.dataset_builder_modules.builder import DatasetBuilder
-    from acestep.training.dataset_builder_modules.models import AudioSample
+    from acestep.training.dataset_builder_modules.builder import (
+        DatasetBuilder,  # type: ignore[import-untyped]
+    )
+    from acestep.training.dataset_builder_modules.models import (
+        AudioSample,  # type: ignore[import-untyped]
+    )
 
     files_to_download = [s.file for s in batch]
     local_paths = download_files(bucket, files_to_download, work_dir)
@@ -94,7 +103,7 @@ def label_batch(
 def save_shard(bucket: str, shard_id: int, state: DatasetState) -> None:
     """Save only the labeled samples from this shard to a shard file."""
     labeled = state.get_by_status("labeled")
-    shard_data = {
+    shard_data: dict[str, Any] = {
         "shard_id": shard_id,
         "samples": [s.to_dict() for s in labeled],
     }
@@ -103,7 +112,7 @@ def save_shard(bucket: str, shard_id: int, state: DatasetState) -> None:
     logger.info(f"Saved shard {shard_id}: {len(labeled)} labeled samples -> {shard_path}")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Label audio tracks from HF bucket")
     parser.add_argument("--bucket", required=True, help="HF bucket name (user/repo)")
     parser.add_argument("--batch-size", type=int, default=50, help="Files per batch")
@@ -113,51 +122,51 @@ def main():
         "--shard-id", type=int, default=-1, help="Shard ID for parallel execution (-1=single job)"
     )
     parser.add_argument("--num-shards", type=int, default=1, help="Total number of parallel shards")
-    args = parser.parse_args()
+    parsed = parser.parse_args()
 
-    is_sharded = args.shard_id >= 0 and args.num_shards > 1
+    bucket: str = parsed.bucket
+    batch_size: int = parsed.batch_size
+    max_samples: int = parsed.max_samples
+    save_every: int = parsed.save_every
+    shard_id: int = parsed.shard_id
+    num_shards: int = parsed.num_shards
 
-    logger.info(f"Starting labeling for bucket: {args.bucket}")
+    is_sharded = shard_id >= 0 and num_shards > 1
+
+    logger.info(f"Starting labeling for bucket: {bucket}")
     if is_sharded:
-        logger.info(f"Shard mode: {args.shard_id + 1}/{args.num_shards}")
+        logger.info(f"Shard mode: {shard_id + 1}/{num_shards}")
 
-    # Load or create state
-    state = load_state(args.bucket)
+    state = load_state(bucket)
 
-    # Discover audio files in bucket
     logger.info("Scanning bucket for audio files...")
-    audio_files = list_audio_files(args.bucket)
+    audio_files = list_audio_files(bucket)
     logger.info(f"Found {len(audio_files)} audio files in bucket")
 
-    # Add new files to state (only the first shard or single mode should do this)
-    if not is_sharded or args.shard_id == 0:
-        new_count = sync_files_to_state(args.bucket, state, audio_files)
+    if not is_sharded or shard_id == 0:
+        new_count = sync_files_to_state(bucket, state, audio_files)
         if new_count > 0:
-            save_state(args.bucket, state)
+            save_state(bucket, state)
 
-    # Get unlabeled samples
     unlabeled = state.get_by_status("unlabeled")
     if not unlabeled:
         logger.info("All samples are already labeled!")
         return
 
-    # Partition for this shard
     if is_sharded:
-        unlabeled = [s for i, s in enumerate(unlabeled) if i % args.num_shards == args.shard_id]
-        logger.info(f"Shard {args.shard_id}: {len(unlabeled)} samples assigned")
+        unlabeled = [s for i, s in enumerate(unlabeled) if i % num_shards == shard_id]
+        logger.info(f"Shard {shard_id}: {len(unlabeled)} samples assigned")
 
-    if args.max_samples > 0:
-        unlabeled = unlabeled[: args.max_samples]
+    if max_samples > 0:
+        unlabeled = unlabeled[:max_samples]
 
-    logger.info(f"Labeling {len(unlabeled)} samples in batches of {args.batch_size}")
+    logger.info(f"Labeling {len(unlabeled)} samples in batches of {batch_size}")
 
-    # Initialize models
     logger.info("Initializing ACE-Step models...")
     ensure_sys_path()
     dit_handler = init_dit_handler()
     llm_handler = init_llm_handler()
 
-    # For sharded mode, use a local-only state to collect labels
     if is_sharded:
         shard_state = DatasetState(
             name=state.name,
@@ -170,40 +179,35 @@ def main():
     else:
         shard_state = state
 
-    # Process in batches
     total_labeled = 0
-    for batch_idx in range(0, len(unlabeled), args.batch_size):
-        batch_samples = unlabeled[batch_idx : batch_idx + args.batch_size]
+    for batch_idx in range(0, len(unlabeled), batch_size):
+        batch_samples = unlabeled[batch_idx : batch_idx + batch_size]
         batch_state = (
-            shard_state.samples[batch_idx : batch_idx + args.batch_size]
-            if is_sharded
-            else batch_samples
+            shard_state.samples[batch_idx : batch_idx + batch_size] if is_sharded else batch_samples
         )
-        batch_num = batch_idx // args.batch_size + 1
-        total_batches = (len(unlabeled) + args.batch_size - 1) // args.batch_size
+        batch_num = batch_idx // batch_size + 1
+        total_batches = (len(unlabeled) + batch_size - 1) // batch_size
 
         logger.info(f"Batch {batch_num}/{total_batches}: {len(batch_state)} samples")
 
         with tempfile.TemporaryDirectory(prefix="acestep_label_") as work_dir:
             labeled = label_batch(
-                dit_handler, llm_handler, shard_state, args.bucket, batch_state, work_dir
+                dit_handler, llm_handler, shard_state, bucket, batch_state, work_dir
             )
             total_labeled += labeled
             logger.info(f"Batch {batch_num}: labeled {labeled}/{len(batch_state)}")
 
-        # Save progress
-        if batch_num % args.save_every == 0:
+        if batch_num % save_every == 0:
             if is_sharded:
-                save_shard(args.bucket, args.shard_id, shard_state)
+                save_shard(bucket, shard_id, shard_state)
             else:
-                save_state(args.bucket, shard_state)
+                save_state(bucket, shard_state)
             logger.info(f"Progress saved. Total labeled so far: {total_labeled}")
 
-    # Final save
     if is_sharded:
-        save_shard(args.bucket, args.shard_id, shard_state)
+        save_shard(bucket, shard_id, shard_state)
     else:
-        save_state(args.bucket, shard_state)
+        save_state(bucket, shard_state)
     logger.info(f"Done! Labeled {total_labeled} samples total")
 
 
