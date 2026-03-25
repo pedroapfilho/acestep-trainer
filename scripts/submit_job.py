@@ -47,12 +47,14 @@ DEFAULT_FLAVORS = {
     "label": "a10g-large",
     "preprocess": "a100-large",
     "train": "a100-large",
+    "generate": "a10g-small",
 }
 
 DEFAULT_TIMEOUTS = {
     "label": "12h",
     "preprocess": "24h",
     "train": "12h",
+    "generate": "1h",
 }
 
 
@@ -121,6 +123,23 @@ def build_train_command(args: argparse.Namespace) -> str:
         f" --batch-size {args.batch_size}"
         f" --gradient-accumulation {args.gradient_accumulation}"
     )
+    return cmd
+
+
+def build_generate_command(args: argparse.Namespace) -> str:
+    """Build the generation command."""
+    prompt_escaped = args.prompt.replace("'", "'\\''")
+    cmd = (
+        f"python /workspace/acestep-trainer/scripts/generate.py"
+        f" --lora-repo {args.lora_repo}"
+        f" --prompt '{prompt_escaped}'"
+        f" --duration {args.duration}"
+        f" --num-tracks {args.num_tracks}"
+    )
+    if args.seed >= 0:
+        cmd += f" --seed {args.seed}"
+    if args.bucket:
+        cmd += f" --output-bucket {args.bucket}"
     return cmd
 
 
@@ -198,6 +217,14 @@ def main():
     train_parser.add_argument("--batch-size", type=int, default=1)
     train_parser.add_argument("--gradient-accumulation", type=int, default=4)
 
+    # Generate
+    gen_parser = subparsers.add_parser("generate", parents=[common])
+    gen_parser.add_argument("--lora-repo", required=True, help="HF LoRA repo (user/repo/subfolder)")
+    gen_parser.add_argument("--prompt", required=True, help="Caption/prompt for generation")
+    gen_parser.add_argument("--duration", type=int, default=60, help="Duration in seconds")
+    gen_parser.add_argument("--num-tracks", type=int, default=1, help="Number of tracks")
+    gen_parser.add_argument("--seed", type=int, default=-1, help="Random seed (-1 for random)")
+
     args = parser.parse_args()
 
     flavor = args.flavor or DEFAULT_FLAVORS[args.phase]
@@ -227,6 +254,8 @@ def main():
         command = build_preprocess_command(args)
     elif args.phase == "train":
         command = build_train_command(args)
+    elif args.phase == "generate":
+        command = build_generate_command(args)
     else:
         parser.error(f"Unknown phase: {args.phase}")
 
