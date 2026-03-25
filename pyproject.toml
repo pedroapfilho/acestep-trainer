@@ -1,0 +1,24 @@
+[project]
+name = "acestep-trainer"
+version = "0.1.0"
+description = "Remote training pipeline for ACE-Step 1.5 on HuggingFace"
+requires-python = ">=3.11,<3.13"
+license = { text = "MIT" }
+dependencies = [
+    "huggingface-hub>=0.30.0",
+    "loguru>=0.7.3",
+    "typer-slim>=0.21.1",
+]
+
+[project.scripts]
+acestep-train = "acestep_trainer.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/acestep_trainer"]
+
+[tool.uv]
+dev-dependencies = ["ruff>=0.9.0"]
