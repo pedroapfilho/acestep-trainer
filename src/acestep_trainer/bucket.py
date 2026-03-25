@@ -1,43 +1,38 @@
-"""HuggingFace Bucket helpers for reading/writing files.
+"""HuggingFace Bucket helpers using the standalone `hf` CLI.
 
-Uses `hf buckets cp` CLI for writes (most reliable for bucket storage)
-and HfFileSystem for reads and directory listing.
+All operations go through the `hf buckets` CLI (Rust binary) to avoid
+Python huggingface_hub version conflicts with transformers.
 """
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 from typing import Any
 
-from huggingface_hub import HfFileSystem
 from loguru import logger
 
-BUCKET_PREFIX = "buckets"
 
-
-def _get_fs() -> HfFileSystem:
-    return HfFileSystem()
-
-
-def _hf_url(bucket: str, path: str) -> str:
+def _hf_url(bucket: str, path: str = "") -> str:
     """Build an hf:// URL for the bucket CLI."""
-    return f"hf://buckets/{bucket}/{path}"
+    if path:
+        return f"hf://buckets/{bucket}/{path}"
+    return f"hf://buckets/{bucket}"
 
 
-def bucket_path(bucket: str, *parts: str) -> str:
-    """Build a full HfFileSystem path for a bucket."""
-    segments = [BUCKET_PREFIX, bucket, *parts]
-    return "/".join(segments)
+def _run_hf(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+    """Run an hf CLI command."""
+    cmd = ["hf", *args]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if check and result.returncode != 0:
+        raise RuntimeError(f"hf {' '.join(args)} failed: {result.stderr}")
+    return result
 
 
 def read_json(bucket: str, path: str) -> dict[str, Any]:
     """Read a JSON file from a bucket."""
-    result = subprocess.run(
-        ["hf", "buckets", "cp", _hf_url(bucket, path), "-"],
-        capture_output=True,
-        text=True,
-    )
+    result = _run_hf("buckets", "cp", _hf_url(bucket, path), "-", check=False)
     if result.returncode != 0:
         raise FileNotFoundError(f"Cannot read {path} from bucket {bucket}: {result.stderr}")
     return json.loads(result.stdout)
@@ -50,39 +45,46 @@ def write_json(bucket: str, path: str, data: dict[str, Any]) -> None:
         tmp_path = f.name
 
     try:
-        result = subprocess.run(
-            ["hf", "buckets", "cp", tmp_path, _hf_url(bucket, path)],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"Failed to write {path}: {result.stderr}")
+        _run_hf("buckets", "cp", tmp_path, _hf_url(bucket, path))
         logger.info(f"Wrote {path} to bucket {bucket}")
     finally:
         os.unlink(tmp_path)
 
 
 def list_audio_files(bucket: str, prefix: str = "") -> list[str]:
-    """List all audio files in a bucket under a prefix.
+    """List all audio files in a bucket recursively.
 
-    Returns relative paths within the bucket (e.g. 'batch-1/track.opus').
+    Uses `hf buckets list -R` and filters by audio extensions.
+    Returns relative paths (e.g. 'batch-1/track.opus').
     """
-    fs = _get_fs()
-    base = bucket_path(bucket, prefix) if prefix else bucket_path(bucket)
+    target = f"{bucket}/{prefix}" if prefix else bucket
+    result = _run_hf("buckets", "list", target, "-R")
+
     audio_exts = {".wav", ".mp3", ".flac", ".ogg", ".opus"}
-    results: list[str] = []
+    files: list[str] = []
 
-    for entry in fs.ls(base, detail=False):
-        if fs.isdir(entry):
-            sub_prefix = entry.removeprefix(f"{BUCKET_PREFIX}/{bucket}/")
-            results.extend(list_audio_files(bucket, sub_prefix))
-        else:
-            ext = os.path.splitext(entry)[1].lower()
-            if ext in audio_exts:
-                rel = entry.removeprefix(f"{BUCKET_PREFIX}/{bucket}/")
-                results.append(rel)
+    for line in result.stdout.strip().splitlines():
+        # hf buckets list output: "  2026-03-24 17:04:29  batch-1/file.opus"
+        # or with -h flag: "  1.0MB  2026-03-24  batch-1/file.opus"
+        line = line.strip()
+        if not line:
+            continue
 
-    return sorted(results)
+        # Extract the path (last whitespace-separated token)
+        parts = line.split()
+        if not parts:
+            continue
+        path = parts[-1]
+
+        # Skip directories (end with /)
+        if path.endswith("/"):
+            continue
+
+        ext = os.path.splitext(path)[1].lower()
+        if ext in audio_exts:
+            files.append(path)
+
+    return sorted(files)
 
 
 def download_files(
@@ -94,15 +96,13 @@ def download_files(
 
     Preserves directory structure. Returns list of local paths.
     """
-    fs = _get_fs()
     local_paths: list[str] = []
 
     for rel_path in files:
         local_path = os.path.join(dest_dir, rel_path)
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
 
-        src = bucket_path(bucket, rel_path)
-        fs.get(src, local_path)
+        _run_hf("buckets", "cp", _hf_url(bucket, rel_path), local_path)
         local_paths.append(local_path)
 
     return local_paths
@@ -110,27 +110,13 @@ def download_files(
 
 def upload_file(bucket: str, local_path: str, remote_path: str) -> None:
     """Upload a local file to the bucket."""
-    result = subprocess.run(
-        ["hf", "buckets", "cp", local_path, _hf_url(bucket, remote_path)],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to upload {local_path}: {result.stderr}")
+    _run_hf("buckets", "cp", local_path, _hf_url(bucket, remote_path))
     logger.debug(f"Uploaded {local_path} -> {remote_path}")
 
 
 def upload_directory(bucket: str, local_dir: str, remote_prefix: str) -> int:
     """Upload an entire local directory to the bucket. Returns file count."""
-    result = subprocess.run(
-        ["hf", "buckets", "sync", local_dir, _hf_url(bucket, remote_prefix)],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to sync {local_dir}: {result.stderr}")
-
-    # Count files uploaded
+    _run_hf("buckets", "sync", local_dir, _hf_url(bucket, remote_prefix))
     count = sum(1 for _, _, files in os.walk(local_dir) for _ in files)
     logger.info(f"Synced {count} files to {bucket}/{remote_prefix}")
     return count
@@ -138,8 +124,5 @@ def upload_directory(bucket: str, local_dir: str, remote_prefix: str) -> int:
 
 def file_exists(bucket: str, path: str) -> bool:
     """Check if a file exists in the bucket by trying to read it."""
-    result = subprocess.run(
-        ["hf", "buckets", "cp", _hf_url(bucket, path), "-"],
-        capture_output=True,
-    )
+    result = _run_hf("buckets", "cp", _hf_url(bucket, path), "-", check=False)
     return result.returncode == 0
