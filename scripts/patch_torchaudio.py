@@ -42,7 +42,8 @@ def _save_with_soundfile(
     import torch
 
     if isinstance(src, torch.Tensor):
-        data = src.cpu().numpy().T  # (channels, samples) -> (samples, channels)
+        tensor: torch.Tensor = src
+        data = tensor.cpu().numpy().T  # (channels, samples) -> (samples, channels)
     else:
         data = np.array(src).T
     sf.write(uri, data, sample_rate)

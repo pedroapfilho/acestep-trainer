@@ -7,8 +7,56 @@ import typer
 
 app = typer.Typer(name="acestep-train", help="ACE-Step remote training pipeline")
 
+MERGE_INTERVAL = 300  # 5 minutes
 
-def _print_status(bucket: str, *, clear: bool = False) -> None:
+
+def _run_merge(bucket: str) -> int:
+    """Run merge and return count of labels applied."""
+    from acestep_trainer.bucket import file_exists
+    from acestep_trainer.bucket import read_json
+    from acestep_trainer.state import SampleState
+    from acestep_trainer.state import load_state
+    from acestep_trainer.state import save_state
+
+    state = load_state(bucket)
+    existing_files = {s.file: s for s in state.samples}
+    total_merged = 0
+    shard_id = 0
+
+    while True:
+        shard_path = f"labels_shard_{shard_id}.json"
+        if not file_exists(bucket, shard_path):
+            break
+
+        shard_data = read_json(bucket, shard_path)
+        shard_samples = [SampleState.from_dict(s) for s in shard_data.get("samples", [])]
+
+        for labeled_sample in shard_samples:
+            if labeled_sample.status != "labeled":
+                continue
+            target = existing_files.get(labeled_sample.file)
+            if target and target.status == "unlabeled":
+                target.status = labeled_sample.status
+                target.caption = labeled_sample.caption
+                target.genre = labeled_sample.genre
+                target.lyrics = labeled_sample.lyrics
+                target.bpm = labeled_sample.bpm
+                target.keyscale = labeled_sample.keyscale
+                target.timesignature = labeled_sample.timesignature
+                target.language = labeled_sample.language
+                target.is_instrumental = labeled_sample.is_instrumental
+                target.labeled_at = labeled_sample.labeled_at
+                total_merged += 1
+
+        shard_id += 1
+
+    if total_merged > 0:
+        save_state(bucket, state)
+
+    return total_merged
+
+
+def _print_status(bucket: str, *, clear: bool = False, merge_info: str = "") -> None:
     from acestep_trainer.state import load_state
 
     state = load_state(bucket)
@@ -35,12 +83,14 @@ def _print_status(bucket: str, *, clear: bool = False) -> None:
         typer.echo(f"  Progress:     [{bar}] {pct:.1f}%")
 
     typer.echo(f"  Updated:      {datetime.now().strftime('%H:%M:%S')}")
+    if merge_info:
+        typer.echo(f"  Last merge:   {merge_info}")
 
 
 @app.command()
 def status(
     bucket: str = typer.Argument(help="HF bucket name (user/repo)"),
-    live: bool = typer.Option(False, "--live", help="Poll every 30s until interrupted"),
+    live: bool = typer.Option(False, "--live", help="Poll every 30s, merge every 5min"),
     interval: int = typer.Option(30, "--interval", help="Poll interval in seconds (with --live)"),
 ):
     """Show dataset state summary from the bucket."""
@@ -48,9 +98,21 @@ def status(
         _print_status(bucket)
         return
 
+    last_merge = 0.0
+    merge_info = ""
+
     try:
         while True:
-            _print_status(bucket, clear=True)
+            now = time.time()
+            if now - last_merge >= MERGE_INTERVAL:
+                merged = _run_merge(bucket)
+                last_merge = now
+                if merged > 0:
+                    merge_info = f"+{merged} labels at {datetime.now().strftime('%H:%M:%S')}"
+                else:
+                    merge_info = f"no new labels at {datetime.now().strftime('%H:%M:%S')}"
+
+            _print_status(bucket, clear=True, merge_info=merge_info)
             time.sleep(interval)
     except KeyboardInterrupt:
         typer.echo("\nStopped.")
@@ -88,68 +150,14 @@ def merge(
 
     Auto-detects all labels_shard_*.json files in the bucket.
     """
-    from acestep_trainer.bucket import file_exists
-    from acestep_trainer.bucket import read_json
-    from acestep_trainer.state import SampleState
-    from acestep_trainer.state import load_state
-    from acestep_trainer.state import save_state
+    merged = _run_merge(bucket)
 
-    state = load_state(bucket)
-    existing_files = {s.file: s for s in state.samples}
-    total_merged = 0
-    shard_id = 0
-
-    while True:
-        shard_path = f"labels_shard_{shard_id}.json"
-        if not file_exists(bucket, shard_path):
-            break
-
-        shard_data = read_json(bucket, shard_path)
-        shard_samples = [SampleState.from_dict(s) for s in shard_data.get("samples", [])]
-
-        applied = 0
-        for labeled_sample in shard_samples:
-            if labeled_sample.status != "labeled":
-                continue
-            target = existing_files.get(labeled_sample.file)
-            if target and target.status == "unlabeled":
-                target.status = labeled_sample.status
-                target.caption = labeled_sample.caption
-                target.genre = labeled_sample.genre
-                target.lyrics = labeled_sample.lyrics
-                target.bpm = labeled_sample.bpm
-                target.keyscale = labeled_sample.keyscale
-                target.timesignature = labeled_sample.timesignature
-                target.language = labeled_sample.language
-                target.is_instrumental = labeled_sample.is_instrumental
-                target.labeled_at = labeled_sample.labeled_at
-                applied += 1
-
-        typer.echo(f"  Shard {shard_id}: {applied} labels applied")
-        total_merged += applied
-        shard_id += 1
-
-    if shard_id == 0:
-        typer.echo("No shard files found in bucket")
-        return
-
-    if total_merged > 0:
-        save_state(bucket, state)
-        typer.echo(f"Merged {total_merged} labels from {shard_id} shards")
+    if merged > 0:
+        typer.echo(f"Merged {merged} labels")
     else:
-        typer.echo(f"Found {shard_id} shards but no new labels to merge")
+        typer.echo("No new labels to merge")
 
     _print_status(bucket)
-
-
-@app.command()
-def tui(
-    bucket: str = typer.Argument("", help="HF bucket name (user/repo)"),
-):
-    """Launch interactive TUI dashboard."""
-    from acestep_trainer.tui import run_tui
-
-    run_tui(bucket=bucket)
 
 
 if __name__ == "__main__":
