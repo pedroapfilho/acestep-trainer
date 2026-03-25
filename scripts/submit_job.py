@@ -76,9 +76,8 @@ def build_setup_commands() -> str:
             # Install trainer deps
             "cd /workspace/acestep-trainer",
             "uv pip install --system -e .",
-            # Fix torchcodec CUDA 13 dependency — symlink CUDA 12 nvrtc as 13
-            "ln -sf /opt/conda/lib/python3.11/site-packages/nvidia/cuda_nvrtc/lib/libnvrtc.so.12 /usr/lib/libnvrtc.so.13",
-            "ldconfig",
+            # Fix torchcodec: install CUDA 13 nvrtc (torchcodec 0.11 needs libnvrtc.so.13)
+            "pip install nvidia-cuda-nvrtc-cu13",
         ]
     )
 
