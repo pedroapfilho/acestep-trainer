@@ -23,7 +23,6 @@ patch_torchaudio.patch()
 
 import argparse
 import os
-import tempfile
 
 from huggingface_hub import HfApi
 from loguru import logger
@@ -93,14 +92,16 @@ def main() -> None:
 
     logger.info(f"Starting LoRA training from bucket: {bucket}")
 
-    tensor_dir = tempfile.mkdtemp(prefix="acestep_tensors_")
+    # Both dirs must be inside the ace-step project root (safe_path restriction)
+    from acestep_trainer.handler import get_project_root
+
+    root = get_project_root()
+    tensor_dir = os.path.join(root, "training_tensors")
+    os.makedirs(tensor_dir, exist_ok=True)
     logger.info("Syncing tensor files from bucket...")
     sync_tensors(bucket, tensor_dir)
 
-    # output_dir must be inside the ace-step project root (safe_path restriction)
-    from acestep_trainer.handler import get_project_root
-
-    output_dir = os.path.join(get_project_root(), "training_output")
+    output_dir = os.path.join(root, "training_output")
     os.makedirs(output_dir, exist_ok=True)
 
     logger.info("Initializing ACE-Step DiT handler...")
