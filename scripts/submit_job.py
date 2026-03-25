@@ -76,6 +76,8 @@ def build_setup_commands() -> str:
             # Install trainer deps
             "cd /workspace/acestep-trainer",
             "uv pip install --system -e .",
+            # Remove torchcodec (broken CUDA 13 dep) — torchaudio+ffmpeg handles audio
+            "pip uninstall -y torchcodec 2>/dev/null || true",
         ]
     )
 
