@@ -17,10 +17,11 @@ def patch() -> None:
 
     stub = types.ModuleType("torchaudio._torchcodec")
 
-    def load_with_torchcodec(*_args: object, **_kwargs: object) -> None:
+    def _raise(*_args: object, **_kwargs: object) -> None:
         raise RuntimeError("torchcodec disabled — using ffmpeg backend")
 
-    stub.load_with_torchcodec = load_with_torchcodec  # type: ignore[attr-defined]
+    stub.load_with_torchcodec = _raise  # type: ignore[attr-defined]
+    stub.save_with_torchcodec = _raise  # type: ignore[attr-defined]
     sys.modules["torchaudio._torchcodec"] = stub
 
     # Also stub torchcodec itself
