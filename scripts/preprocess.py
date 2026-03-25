@@ -104,6 +104,10 @@ def main() -> None:
     parser.add_argument("--max-samples", type=int, default=0, help="Max samples (0=all)")
     parser.add_argument("--max-duration", type=float, default=240.0, help="Max audio duration (s)")
     parser.add_argument("--save-every", type=int, default=1, help="Save state every N batches")
+    parser.add_argument(
+        "--shard-id", type=int, default=-1, help="Shard ID for parallel execution (-1=single job)"
+    )
+    parser.add_argument("--num-shards", type=int, default=1, help="Total number of parallel shards")
     parsed = parser.parse_args()
 
     bucket: str = parsed.bucket
@@ -111,8 +115,14 @@ def main() -> None:
     max_samples: int = parsed.max_samples
     max_duration: float = parsed.max_duration
     save_every: int = parsed.save_every
+    shard_id: int = parsed.shard_id
+    num_shards: int = parsed.num_shards
+
+    is_sharded = shard_id >= 0 and num_shards > 1
 
     logger.info(f"Starting preprocessing for bucket: {bucket}")
+    if is_sharded:
+        logger.info(f"Shard mode: {shard_id + 1}/{num_shards}")
 
     state = load_state(bucket)
 
@@ -120,6 +130,10 @@ def main() -> None:
     if not labeled:
         logger.info("No labeled samples to preprocess!")
         return
+
+    if is_sharded:
+        labeled = [s for i, s in enumerate(labeled) if i % num_shards == shard_id]
+        logger.info(f"Shard {shard_id}: {len(labeled)} samples assigned")
 
     if max_samples > 0:
         labeled = labeled[:max_samples]

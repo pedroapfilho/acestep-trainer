@@ -92,7 +92,9 @@ def build_label_command(args: argparse.Namespace, shard_id: int = -1, num_shards
     return cmd
 
 
-def build_preprocess_command(args: argparse.Namespace) -> str:
+def build_preprocess_command(
+    args: argparse.Namespace, shard_id: int = -1, num_shards: int = 1
+) -> str:
     """Build the preprocessing command."""
     cmd = f"python /workspace/acestep-trainer/scripts/preprocess.py --bucket {args.bucket}"
     if args.max_samples:
@@ -101,6 +103,8 @@ def build_preprocess_command(args: argparse.Namespace) -> str:
         cmd += f" --batch-size {args.batch_size}"
     if args.max_duration:
         cmd += f" --max-duration {args.max_duration}"
+    if shard_id >= 0:
+        cmd += f" --shard-id {shard_id} --num-shards {num_shards}"
     return cmd
 
 
@@ -180,6 +184,9 @@ def main():
     pre_parser.add_argument("--max-samples", type=int, default=0)
     pre_parser.add_argument("--batch-size", type=int, default=20)
     pre_parser.add_argument("--max-duration", type=float, default=240.0)
+    pre_parser.add_argument(
+        "--parallel", type=int, default=1, help="Number of parallel jobs (shards)"
+    )
 
     # Train
     train_parser = subparsers.add_parser("train", parents=[common])
@@ -209,6 +216,14 @@ def main():
             return
         command = build_label_command(args)
     elif args.phase == "preprocess":
+        parallel = getattr(args, "parallel", 1)
+        if parallel > 1:
+            print(f"Submitting {parallel} parallel preprocessing jobs...")
+            for shard_id in range(parallel):
+                command = build_preprocess_command(args, shard_id=shard_id, num_shards=parallel)
+                phase_name = f"preprocess (shard {shard_id}/{parallel})"
+                submit(phase_name, command, flavor, timeout, args.dry_run)
+            return
         command = build_preprocess_command(args)
     elif args.phase == "train":
         command = build_train_command(args)
