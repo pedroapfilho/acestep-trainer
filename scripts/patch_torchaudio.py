@@ -8,7 +8,7 @@ torchcodec so torchaudio falls back to the ffmpeg/soundfile backend.
 
 from __future__ import annotations
 
-import importlib
+import importlib.machinery
 import sys
 import types
 
