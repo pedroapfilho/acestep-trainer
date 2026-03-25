@@ -7,6 +7,7 @@ license = { text = "MIT" }
 dependencies = [
     "huggingface-hub>=0.30.0",
     "loguru>=0.7.3",
+    "textual>=8.1.1",
     "typer-slim>=0.21.1",
 ]
 

@@ -136,5 +136,15 @@ def merge(
     _print_status(bucket)
 
 
+@app.command()
+def tui(
+    bucket: str = typer.Argument("", help="HF bucket name (user/repo)"),
+):
+    """Launch interactive TUI dashboard."""
+    from acestep_trainer.tui import run_tui
+
+    run_tui(bucket=bucket)
+
+
 if __name__ == "__main__":
     app()
