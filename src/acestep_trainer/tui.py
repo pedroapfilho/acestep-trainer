@@ -592,56 +592,30 @@ class AceStepTUI(App[None]):
 
     @work(thread=True)
     def _do_merge(self) -> None:
-        from acestep_trainer.bucket import file_exists
-        from acestep_trainer.bucket import read_json
-        from acestep_trainer.state import SampleState
-        from acestep_trainer.state import load_state
-        from acestep_trainer.state import save_state
-
+        """Run merge via the CLI command (same code path as terminal)."""
         self.call_from_thread(self.notify, "Merging shards...")
+        self.call_from_thread(self._append_log, f"$ acestep-train merge {self._bucket}")
 
-        state = load_state(self._bucket)
-        existing_files = {s.file: s for s in state.samples}
-        total_merged = 0
-
-        # Auto-detect shards
-        shard_id = 0
-        while True:
-            shard_path = f"labels_shard_{shard_id}.json"
-            if not file_exists(self._bucket, shard_path):
-                break
-
-            shard_data = read_json(self._bucket, shard_path)
-            shard_samples = [SampleState.from_dict(s) for s in shard_data.get("samples", [])]
-            applied = 0
-            for ls in shard_samples:
-                if ls.status != "labeled":
-                    continue
-                target = existing_files.get(ls.file)
-                if target and target.status == "unlabeled":
-                    target.status = ls.status
-                    target.caption = ls.caption
-                    target.genre = ls.genre
-                    target.lyrics = ls.lyrics
-                    target.bpm = ls.bpm
-                    target.keyscale = ls.keyscale
-                    target.timesignature = ls.timesignature
-                    target.language = ls.language
-                    target.is_instrumental = ls.is_instrumental
-                    target.labeled_at = ls.labeled_at
-                    applied += 1
-
-            self.call_from_thread(self._append_log, f"Shard {shard_id}: {applied} labels applied")
-            total_merged += applied
-            shard_id += 1
-
-        if total_merged > 0:
-            save_state(self._bucket, state)
-
-        self.call_from_thread(
-            self.notify,
-            f"Merged {total_merged} labels from {shard_id} shards",
+        result = subprocess.run(
+            ["uv", "run", "acestep-train", "merge", self._bucket],
+            capture_output=True,
+            text=True,
         )
+
+        if result.stdout:
+            for line in result.stdout.strip().splitlines():
+                self.call_from_thread(self._append_log, line)
+        if result.stderr:
+            # Filter loguru INFO lines for cleaner output
+            for line in result.stderr.strip().splitlines():
+                if "INFO" not in line:
+                    self.call_from_thread(self._append_log, line)
+
+        if result.returncode == 0:
+            self.call_from_thread(self.notify, "Merge complete!")
+        else:
+            self.call_from_thread(self.notify, "Merge failed", severity="error")
+
         self.call_from_thread(self.refresh_data)
 
 
