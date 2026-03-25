@@ -13,37 +13,18 @@ Usage (HF Job — see scripts/submit_job.py):
 
 import argparse
 import os
-import sys
 import tempfile
 
 from loguru import logger
 
-# Add ace-step-1.5 to path so we can import its modules
-ACE_STEP_DIR = os.path.join(os.path.dirname(__file__), "..", "ace-step-1.5")
-sys.path.insert(0, os.path.abspath(ACE_STEP_DIR))
-
 from acestep_trainer.bucket import download_files, list_audio_files
+from acestep_trainer.handler import init_dit_handler, init_llm_handler, ensure_sys_path
 from acestep_trainer.state import (
     DatasetState,
     load_state,
     save_state,
     sync_files_to_state,
 )
-
-
-def init_handlers(model_dir: str | None = None):
-    """Initialize ACE-Step DiT and LLM handlers."""
-    from acestep.pipeline_ace_step import ACEStepPipeline
-
-    pipe = ACEStepPipeline()
-
-    # Download models if needed (HF Jobs start fresh)
-    if model_dir:
-        pipe.load_from_directory(model_dir)
-    else:
-        pipe.load_default()
-
-    return pipe.dit_handler, pipe.llm_handler
 
 
 def label_batch(
@@ -109,7 +90,6 @@ def main():
     parser.add_argument("--bucket", required=True, help="HF bucket name (user/repo)")
     parser.add_argument("--batch-size", type=int, default=50, help="Files per batch")
     parser.add_argument("--max-samples", type=int, default=0, help="Max samples to label (0=all)")
-    parser.add_argument("--model-dir", default=None, help="Local model directory")
     parser.add_argument("--save-every", type=int, default=1, help="Save state every N batches")
     args = parser.parse_args()
 
@@ -139,9 +119,11 @@ def main():
 
     logger.info(f"Labeling {len(unlabeled)} unlabeled samples in batches of {args.batch_size}")
 
-    # Initialize models
+    # Initialize models (downloads from HF on first use)
     logger.info("Initializing ACE-Step models...")
-    dit_handler, llm_handler = init_handlers(args.model_dir)
+    ensure_sys_path()
+    dit_handler = init_dit_handler()
+    llm_handler = init_llm_handler()
 
     # Process in batches
     total_labeled = 0

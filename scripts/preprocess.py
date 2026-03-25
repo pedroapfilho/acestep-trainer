@@ -12,29 +12,13 @@ Usage:
 
 import argparse
 import os
-import sys
 import tempfile
 
 from loguru import logger
 
-ACE_STEP_DIR = os.path.join(os.path.dirname(__file__), "..", "ace-step-1.5")
-sys.path.insert(0, os.path.abspath(ACE_STEP_DIR))
-
 from acestep_trainer.bucket import download_files, upload_directory
+from acestep_trainer.handler import init_dit_handler, ensure_sys_path
 from acestep_trainer.state import load_state, save_state
-
-
-def init_dit_handler(model_dir: str | None = None):
-    """Initialize the ACE-Step DiT handler with all sub-models."""
-    from acestep.pipeline_ace_step import ACEStepPipeline
-
-    pipe = ACEStepPipeline()
-    if model_dir:
-        pipe.load_from_directory(model_dir)
-    else:
-        pipe.load_default()
-
-    return pipe.dit_handler
 
 
 def preprocess_batch(
@@ -109,7 +93,6 @@ def main():
     parser.add_argument("--batch-size", type=int, default=20, help="Files per batch")
     parser.add_argument("--max-samples", type=int, default=0, help="Max samples (0=all)")
     parser.add_argument("--max-duration", type=float, default=240.0, help="Max audio duration (s)")
-    parser.add_argument("--model-dir", default=None, help="Local model directory")
     parser.add_argument("--save-every", type=int, default=1, help="Save state every N batches")
     args = parser.parse_args()
 
@@ -129,9 +112,10 @@ def main():
 
     logger.info(f"Preprocessing {len(labeled)} labeled samples")
 
-    # Initialize models
+    # Initialize models (downloads from HF on first use)
     logger.info("Initializing ACE-Step DiT handler...")
-    dit_handler = init_dit_handler(args.model_dir)
+    ensure_sys_path()
+    dit_handler = init_dit_handler()
 
     # Process in batches
     total_preprocessed = 0

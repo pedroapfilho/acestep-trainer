@@ -15,14 +15,12 @@ Usage:
 
 import argparse
 import os
-import sys
 import tempfile
 
 from huggingface_hub import HfApi
 from loguru import logger
 
-ACE_STEP_DIR = os.path.join(os.path.dirname(__file__), "..", "ace-step-1.5")
-sys.path.insert(0, os.path.abspath(ACE_STEP_DIR))
+from acestep_trainer.handler import init_dit_handler, ensure_sys_path
 
 
 def sync_tensors(bucket: str, dest_dir: str) -> str:
@@ -71,24 +69,10 @@ def push_checkpoint(
     logger.info(f"Pushed checkpoint to {repo_id}/{subfolder}")
 
 
-def init_dit_handler(model_dir: str | None = None):
-    """Initialize the ACE-Step DiT handler (non-quantized for LoRA)."""
-    from acestep.pipeline_ace_step import ACEStepPipeline
-
-    pipe = ACEStepPipeline()
-    if model_dir:
-        pipe.load_from_directory(model_dir)
-    else:
-        pipe.load_default()
-
-    return pipe.dit_handler
-
-
 def main():
     parser = argparse.ArgumentParser(description="Train LoRA from preprocessed tensors")
     parser.add_argument("--bucket", required=True, help="HF bucket with tensors/")
     parser.add_argument("--output-repo", required=True, help="HF model repo for checkpoints")
-    parser.add_argument("--model-dir", default=None, help="Local model directory")
 
     # LoRA config
     parser.add_argument("--lora-rank", type=int, default=8, help="LoRA rank")
@@ -116,9 +100,10 @@ def main():
     # Output dir for checkpoints (local, pushed to HF after each save)
     output_dir = tempfile.mkdtemp(prefix="acestep_output_")
 
-    # Initialize model
+    # Initialize model (downloads from HF on first use, no quantization for LoRA)
     logger.info("Initializing ACE-Step DiT handler...")
-    dit_handler = init_dit_handler(args.model_dir)
+    ensure_sys_path()
+    dit_handler = init_dit_handler(quantization=None)
 
     # Configure training
     from acestep.training.configs import LoRAConfig, TrainingConfig
