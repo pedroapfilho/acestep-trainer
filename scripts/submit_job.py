@@ -67,17 +67,18 @@ def build_setup_commands() -> str:
         "apt-get update -qq && apt-get install -y -qq git > /dev/null",
         # Install uv (fast Python package manager)
         "pip install -q uv",
+        # Install standalone hf CLI (Rust binary — independent of Python huggingface_hub version)
+        "uv tool install 'huggingface_hub[hf_xet,cli]'",
+        "export PATH=$HOME/.local/bin:$PATH",
         # Clone repos
         f"git clone {ACESTEP_REPO} /workspace/ace-step-1.5",
         f"git clone {TRAINER_REPO} /workspace/acestep-trainer",
         # Install ace-step with uv (handles local nano-vllm source)
         "cd /workspace/ace-step-1.5",
         "uv pip install --system -e .",
-        # Install trainer deps (re-upgrades huggingface_hub to >=1.5.0 for bucket support)
+        # Install trainer deps
         "cd /workspace/acestep-trainer",
         "uv pip install --system -e .",
-        # Ensure hf CLI with xet backend is present (ace-step may downgrade huggingface_hub)
-        "uv pip install --system 'huggingface_hub[hf_xet]>=1.5.0'",
     ])
 
 
