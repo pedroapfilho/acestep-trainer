@@ -13,3 +13,6 @@ scipy>=1.10.1
 loguru>=0.7.3
 huggingface-hub>=0.30.0
 numpy
+vector-quantize-pytorch>=1.27.15
+lycoris-lora
+numba>=0.63.1
