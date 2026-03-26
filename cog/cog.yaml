@@ -11,10 +11,6 @@ build:
     - "git clone https://github.com/ace-step/ACE-Step-1.5.git /src/ace-step-1.5"
     - "pip install -e /src/ace-step-1.5/acestep/third_parts/nano-vllm"
     - "pip install --no-deps -e /src/ace-step-1.5"
-    - "pip install huggingface_hub[hf_xet]"
-    - "python -c \"from huggingface_hub import snapshot_download; snapshot_download('ACE-Step/Ace-Step1.5', local_dir='/src/ace-step-1.5/checkpoints')\""
-    - "python -c \"from huggingface_hub import snapshot_download; snapshot_download('pedroapfilho/acestep-lofi-lora', local_dir='/src/lora_full', allow_patterns='final/adapter/*')\""
-    - "mkdir -p /src/lora && cp /src/lora_full/final/adapter/* /src/lora/"
 
 predict: "predict.py:Predictor"
 image: "r8.im/frow/lofi"

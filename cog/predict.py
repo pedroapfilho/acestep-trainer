@@ -1,27 +1,65 @@
 """Cog Predictor for ACE-Step 1.5 with LoRA support.
 
-Deploys to Replicate as a serverless music generation model.
-Model weights and LoRA are baked into the Docker image at build time.
+Deploys to Replicate as frow/lofi.
+Weights are downloaded at setup() using pget for fast parallel downloads.
 """
 
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 
 import torchaudio
 from cog import BasePredictor, Input, Path as CogPath
 
+CHECKPOINTS_DIR = "/src/ace-step-1.5/checkpoints"
+LORA_DIR = "/src/lora"
+
 
 class Predictor(BasePredictor):
     def setup(self):
-        """Load model weights (baked into image) and initialize handler."""
-        from acestep.handler import AceStepHandler
+        """Download weights via pget and initialize the model."""
+        # Download base model weights (if not already present)
+        if not os.path.exists(os.path.join(CHECKPOINTS_DIR, "acestep-v15-turbo")):
+            print("Downloading ACE-Step model weights...")
+            subprocess.check_call(
+                [
+                    "pget",
+                    "https://huggingface.co/ACE-Step/Ace-Step1.5/resolve/main",
+                    CHECKPOINTS_DIR,
+                    "-x",
+                ],
+                close_fds=True,
+            )
 
-        project_root = "/src/ace-step-1.5"
+        # If pget doesn't work with HF URLs, fall back to huggingface_hub
+        if not os.path.exists(os.path.join(CHECKPOINTS_DIR, "acestep-v15-turbo")):
+            print("Falling back to huggingface_hub download...")
+            from huggingface_hub import snapshot_download
+
+            snapshot_download("ACE-Step/Ace-Step1.5", local_dir=CHECKPOINTS_DIR)
+
+        # Download LoRA weights
+        if not os.path.exists(os.path.join(LORA_DIR, "adapter_config.json")):
+            print("Downloading LoRA weights...")
+            from huggingface_hub import snapshot_download
+
+            snapshot_download(
+                "pedroapfilho/acestep-lofi-lora",
+                local_dir="/src/lora_full",
+                allow_patterns="final/adapter/*",
+            )
+            os.makedirs(LORA_DIR, exist_ok=True)
+            src = "/src/lora_full/final/adapter"
+            for f in os.listdir(src):
+                os.rename(os.path.join(src, f), os.path.join(LORA_DIR, f))
+
+        # Initialize handler
+        from acestep.handler import AceStepHandler
 
         self.handler = AceStepHandler()
         status, ok = self.handler.initialize_service(
-            project_root=project_root,
+            project_root="/src/ace-step-1.5",
             config_path="acestep-v15-turbo",
             device="cuda",
             use_flash_attention=True,
@@ -34,9 +72,9 @@ class Predictor(BasePredictor):
         if not ok:
             raise RuntimeError(f"Failed to initialize: {status}")
 
-        # Load LoRA (baked into image at /src/lora)
-        lora_status = self.handler.load_lora("/src/lora")
-        print(f"LoRA loaded: {lora_status}")
+        # Load LoRA
+        lora_status = self.handler.load_lora(LORA_DIR)
+        print(f"LoRA: {lora_status}")
 
     def predict(
         self,
