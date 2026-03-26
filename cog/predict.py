@@ -54,33 +54,10 @@ from cog import BasePredictor, Input, Path as CogPath
 
 class Predictor(BasePredictor):
     def setup(self):
-        """Download model weights and LoRA, initialize handler."""
-        from huggingface_hub import snapshot_download
+        """Load model weights (baked into image) and initialize handler."""
+        from acestep.handler import AceStepHandler
 
         project_root = "/src/ace-step-1.5"
-        checkpoints_dir = os.path.join(project_root, "checkpoints")
-
-        # Download base model weights
-        if not os.path.exists(os.path.join(checkpoints_dir, "acestep-v15-turbo")):
-            snapshot_download("ACE-Step/Ace-Step1.5", local_dir=checkpoints_dir)
-
-        # Download LoRA
-        lora_repo = os.environ.get("LORA_REPO", "pedroapfilho/acestep-lofi-lora")
-        lora_subfolder = os.environ.get("LORA_SUBFOLDER", "final/adapter")
-        self.lora_dir = "/src/lora"
-        if not os.path.exists(os.path.join(self.lora_dir, "adapter_config.json")):
-            snapshot_download(
-                lora_repo,
-                local_dir="/src/lora_full",
-                allow_patterns=f"{lora_subfolder}/*",
-            )
-            src = os.path.join("/src/lora_full", lora_subfolder)
-            os.makedirs(self.lora_dir, exist_ok=True)
-            for f in os.listdir(src):
-                os.rename(os.path.join(src, f), os.path.join(self.lora_dir, f))
-
-        # Initialize handler
-        from acestep.handler import AceStepHandler
 
         self.handler = AceStepHandler()
         status, ok = self.handler.initialize_service(
@@ -97,8 +74,8 @@ class Predictor(BasePredictor):
         if not ok:
             raise RuntimeError(f"Failed to initialize: {status}")
 
-        # Load LoRA
-        lora_status = self.handler.load_lora(self.lora_dir)
+        # Load LoRA (baked into image at /src/lora)
+        lora_status = self.handler.load_lora("/src/lora")
         print(f"LoRA loaded: {lora_status}")
 
     def predict(
