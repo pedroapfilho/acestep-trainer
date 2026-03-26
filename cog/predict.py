@@ -4,10 +4,42 @@ Deploys to Replicate as frow/lofi.
 Weights are downloaded at setup() using pget for fast parallel downloads.
 """
 
+import importlib.machinery
 import os
 import subprocess
+import sys
 import tempfile
+import types
 from pathlib import Path
+
+# Patch torchcodec (CUDA 13 libnvrtc dep mismatch on all cloud GPU providers)
+def _patch_torchcodec():
+    def _stub(name):
+        m = types.ModuleType(name)
+        m.__spec__ = importlib.machinery.ModuleSpec(name, None)
+        m.__loader__ = None
+        m.__path__ = []
+        m.__package__ = name.rsplit(".", 1)[0] if "." in name else name
+        return m
+
+    def _load(uri, *_a, **_k):
+        import numpy as np, soundfile as sf, torch
+        d, sr = sf.read(uri, dtype="float32", always_2d=True)
+        return torch.from_numpy(np.ascontiguousarray(d.T)), sr
+
+    def _save(uri, src, sr, *_a, **_k):
+        import numpy as np, soundfile as sf, torch
+        d = src.cpu().numpy().T if isinstance(src, torch.Tensor) else np.array(src).T
+        sf.write(uri, d, sr)
+
+    ta = _stub("torchaudio._torchcodec")
+    ta.load_with_torchcodec = _load
+    ta.save_with_torchcodec = _save
+    sys.modules["torchaudio._torchcodec"] = ta
+    for n in ["torchcodec", "torchcodec.decoders", "torchcodec._internally_replaced_utils"]:
+        sys.modules[n] = _stub(n)
+
+_patch_torchcodec()
 
 import torchaudio
 from cog import BasePredictor, Input, Path as CogPath
