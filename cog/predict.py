@@ -1,52 +1,12 @@
 """Cog Predictor for ACE-Step 1.5 with LoRA support.
 
 Deploys to Replicate as a serverless music generation model.
-The base model (ACE-Step) is installed in the Docker image at build time.
-Model weights and LoRA are downloaded during setup().
+Model weights and LoRA are baked into the Docker image at build time.
 """
 
 import os
-import sys
 import tempfile
-import types
-import importlib.machinery
 from pathlib import Path
-
-# Patch torchcodec before any torchaudio imports (CUDA 13 dep mismatch)
-def _patch_torchcodec():
-    def _make_stub(name):
-        mod = types.ModuleType(name)
-        mod.__spec__ = importlib.machinery.ModuleSpec(name, None)
-        mod.__loader__ = None
-        mod.__path__ = []
-        mod.__package__ = name.rsplit(".", 1)[0] if "." in name else name
-        return mod
-
-    def _load_sf(uri, *_a, **_kw):
-        import numpy as np
-        import soundfile as sf
-        import torch
-        data, sr = sf.read(uri, dtype="float32", always_2d=True)
-        return torch.from_numpy(np.ascontiguousarray(data.T)), sr
-
-    def _save_sf(uri, src, sample_rate, *_a, **_kw):
-        import numpy as np
-        import soundfile as sf
-        import torch
-        if isinstance(src, torch.Tensor):
-            data = src.cpu().numpy().T
-        else:
-            data = np.array(src).T
-        sf.write(uri, data, sample_rate)
-
-    ta = _make_stub("torchaudio._torchcodec")
-    ta.load_with_torchcodec = _load_sf
-    ta.save_with_torchcodec = _save_sf
-    sys.modules["torchaudio._torchcodec"] = ta
-    for name in ["torchcodec", "torchcodec.decoders", "torchcodec._internally_replaced_utils"]:
-        sys.modules[name] = _make_stub(name)
-
-_patch_torchcodec()
 
 import torchaudio
 from cog import BasePredictor, Input, Path as CogPath
